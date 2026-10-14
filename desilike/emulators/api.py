@@ -23,6 +23,27 @@ from desilike.base import copy, get_params, _bind_variables
 from desilike.parameter import Variable, VariableCollection
 
 
+def _space_center_user(space):
+    """Space.center mapped back from the expansion variable to the user's own parameters.
+
+    Space.limits / Space.center are in the transformed variable (e.g. ln fR0 for
+    transforms={'fR0_HS': 'log'}); predict() and Parameter values expect the user's own.
+    """
+    centre = dict(space.center)
+    inverse = getattr(space, 'inverse', None)
+    if inverse is not None:
+        return dict(inverse(centre))
+    from cosmoprimo.emulators.tools.utils import TRANSFORMS
+    out = {}
+    for name, value in centre.items():
+        spec = (getattr(space, 'transforms', None) or {}).get(name)
+        if spec is None:
+            out[name] = value
+        else:
+            out[name] = (TRANSFORMS[spec] if isinstance(spec, str) else spec)[1](value)
+    return out
+
+
 def _import(path):
     """``'module.Name'`` back to the class."""
     import importlib
@@ -408,6 +429,13 @@ class CalculatorEmulator(_Emulator):
                 # from reaches it here. `predict` above is a bound method of the same object.
                 self._emulator = emulator
 
+                #temporary:
+                # Runtime state normally initialized by PrimordialCosmology.__init__,
+                # which is skipped for emulated calculators.
+                if hasattr(root_cls, 'add_requirements'):
+                    self._requirements = {}
+                    self._results = {}
+
             return __init__
 
         def make_call():
@@ -432,8 +460,18 @@ class CalculatorEmulator(_Emulator):
                 leaves = [predicted[name] for name in children_leafnames]
                 children = jax.tree_util.tree_unflatten(children_treedef, leaves)
                 rebuilt = root_cls.tree_unflatten(aux, children)
+                #for key, value in rebuilt.__dict__.items():
+                    #setattr(self, key, value)
+                
+                #temporary:
                 for key, value in rebuilt.__dict__.items():
+                    # Requirements are runtime graph state populated by downstream
+                    # calculators during build; do not overwrite them with the
+                    # requirements stored in the emulated pytree state.
+                    if key in ('_requirements', '_results'):
+                        continue
                     setattr(self, key, value)
+                
                 # in place, so the pipeline's existing reference to the node stays valid
                 for name, node in self.emulator_derived.items():
                     node.value = predicted[f'{DERIVED}{name}']
@@ -490,7 +528,7 @@ class CalculatorEmulator(_Emulator):
         # carries the configuration and one prediction at the deployment point carries the rest --
         # the same two ingredients `__call__` uses, so the object starts out exactly as a called
         # one looks.
-        centre = dict(self.space.center)
+        centre = _space_center_user(self.space)
         predicted = self.predict(**centre)
         leaves = [predicted[name] for name in self.children_leafnames]
         children = jax.tree_util.tree_unflatten(self.children_treedef, leaves)
@@ -519,7 +557,7 @@ class CalculatorEmulator(_Emulator):
             # On the deployed object, not on the emulator's own nodes: `build` resolves a
             # parameter from the calculator it evaluates, so moving anything else is a no-op that
             # looks like it worked.
-            values = self.space.center if center is True else dict(center)
+            values = _space_center_user(self.space) if center is True else dict(center)
             params = get_params(deployed)
             for name, value in values.items():
                 if name in params:

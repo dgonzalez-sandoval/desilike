@@ -1938,9 +1938,16 @@ class FOLPSPTSpectrum2Poles(Calculator):
         # the template's own copy -- sharing makes the graph thread it here.  Harmless otherwise
         # (one extra threaded input).  Always set, empty for a template carrying no cosmology, so
         # that `_anchors` can ask without first asking whether it may.
-        cosmo_params = self.template.cosmo.params if hasattr(self.template, 'cosmo') else {}
+        #cosmo_params = self.template.cosmo.params if hasattr(self.template, 'cosmo') else {}
+        #self.params = {name: cosmo_params[name] for name in ('h',) if name in cosmo_params}
+
+        #temporary fix:
+        cosmo = getattr(self.template, 'cosmo', None)
+        cosmo_params = getattr(cosmo, 'params', getattr(cosmo, 'emulator_params', {}))
         self.params = {name: cosmo_params[name] for name in ('h',) if name in cosmo_params}
 
+
+    
     def __post_init__(self, k=None, template=None, ells=(0, 2, 4), mu=6, kernels='fk', rbao=104.,
                       A_full=True, remove_DeltaP=False, damping_method='tree+loop',
                       use_GTNS=None, nfftlog=256, nk=480, **kwargs):
@@ -2197,9 +2204,15 @@ class FOLPSPTSpectrum3Poles(FOLPSPTSpectrum2Poles):
         # As on the parent: share the cosmology's h Parameter with this node, so `_anchors` reads
         # the value the graph threads here rather than the template's own copy.  Needed since
         # `FOLPSD3PolesEmulator` preconditions in h too.
-        cosmo_params = self.template.cosmo.params if hasattr(self.template, 'cosmo') else {}
+        #cosmo_params = self.template.cosmo.params if hasattr(self.template, 'cosmo') else {}
+        #self.params = {name: cosmo_params[name] for name in ('h',) if name in cosmo_params}
+
+        #temporary:
+        cosmo = getattr(self.template, 'cosmo', None)
+        cosmo_params = getattr(cosmo, 'params', getattr(cosmo, 'emulator_params', {}))
         self.params = {name: cosmo_params[name] for name in ('h',) if name in cosmo_params}
 
+        
     def __post_init__(self, k=None, template=None, ells=None, mu=6, kernels='fk', rbao=104.,
                       A_full=True, remove_DeltaP=False, model='FOLPSD', damping='lor',
                       precision=(4, 16, 4), renormalized=True, interpolation_method='linear',
@@ -3153,6 +3166,14 @@ class FKPTJAXPTSpectrum2Poles(Calculator):
         jac, kap, muap = self.template.ap_k_mu(self.k[:, None], self._to_poles.mu)
 
         Om = self.template.cosmo['Omega_m']
+        # Dark-energy background for fkpt's growth ODE, kernels and mu_OmDE.  Before this,
+        # fkpt solved its ODEs with an LCDM background whatever the template's (w0, wa).
+        try:
+            w0 = float(self.template.cosmo['w0_fld'])
+            wa = float(self.template.cosmo['wa_fld'])
+        except (KeyError, TypeError, ValueError):
+            w0, wa = -1.0, 0.0
+        _non_lcdm = (w0, wa) != (-1.0, 0.0)
         xnow = -3.912023
         mg_kwargs = self._mg_kwargs()
         if self._is_binning:
@@ -3191,6 +3212,9 @@ class FKPTJAXPTSpectrum2Poles(Calculator):
                         f"growth_source='template' needs an fkptjax whose "
                         f"Kfuncs_to_tables_jax accepts {_missing}; the installed one "
                         f"does not. Update fkptjax or use growth_source='ode'.")
+            if _non_lcdm:
+                raise NotImplementedError(
+                    f"fkpt binning (JAX) route assumes an LCDM background; got w0={w0}, wa={wa}.")
             table_w, table_now, kernel_constants = Kfuncs_to_tables_jax(
                 k=self.template.k, pk=self.template.pk_dd, pk_now=self.template.pknow_dd,
                 z=float(self.template.z), Om=Om,
@@ -3212,6 +3236,15 @@ class FKPTJAXPTSpectrum2Poles(Calculator):
                         f"growth_source='template' needs an fkptjax whose "
                         f"Kfuncs_to_tables accepts {_missing}; the installed one "
                         f"does not. Update fkptjax or use growth_source='ode'.")
+            _bg_kwargs = {}
+            if _non_lcdm:
+                import inspect
+                if 'w0' not in inspect.signature(Kfuncs_to_tables).parameters:
+                    raise NotImplementedError(
+                        f"w0={w0}, wa={wa} needs an fkptjax whose Kfuncs_to_tables accepts w0/wa "
+                        "(the CPL-background patch); the installed one would silently solve the "
+                        "growth with an LCDM background.")
+                _bg_kwargs = dict(w0=w0, wa=wa)
             table_w, table_now, kernel_constants = Kfuncs_to_tables(
                 k=self.template.k, pk=self.template.pk_dd, pk_now=self.template.pknow_dd,
                 z=float(self.template.z), Om=Om,
@@ -3222,6 +3255,7 @@ class FKPTJAXPTSpectrum2Poles(Calculator):
                 use_numba=self._use_numba,
                 neutrino_correction=neutrino_correction,
                 return_kernel_constants=True,
+                **_bg_kwargs,
                 **mg_kwargs,
             )
         self._table_w = table_w
@@ -3240,7 +3274,7 @@ class FKPTJAXPTSpectrum2Poles(Calculator):
         self.f0 = self._table_state.f0
         self.fk = self._table_state.fk
         # the template's growth rate, so an emulator can route f0 against it: f0 comes from
-        # fkpt's own growth (an ODE in Omega_m) and the two are not the same number
+        # fkpt's own growth (an ODE in Omega_m, w0, wa) and the two are not the same number
         self.f = self.template.f
 
     def combine_bias_terms_spectrum2_poles(self, pars, bias_scheme, damping, damping_method=None, use_GTNS=None, redshift_smearing=None):
@@ -3364,8 +3398,9 @@ class FKPTJAXPTSpectrum2Poles(Calculator):
         """The exact-scaling emulator for the fkpt pt:
         :class:`FKPTEmulator`.
 
-        Amplitude only: fkpt's growth is derived internally from (z, Omega_m) and is blind to
-        w0/wa, so it must NOT be rescaled.  See that class for the beyond-EdS caveat.
+        Amplitude only: fkpt's growth is derived internally from (z, Omega_m, w0, wa) -- w0/wa
+        since the CPL-background patch -- so it must NOT be rescaled.  NOTE: with w0/wa varied,
+        they must be expanded in the emulator grid, not routed as exact scalings.  See that class for the beyond-EdS caveat.
         """
         return FKPTEmulator
 
