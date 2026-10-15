@@ -175,12 +175,24 @@ class SPT3G2yrMUSELikelihood(GaussianLikelihood):
         except ImportError:
             pass
 
+        #data_dir = installer.data_dir(cls.installer_section)
+        #os.makedirs(data_dir, exist_ok=True)
+        #zip_fn = os.path.join(data_dir, os.path.basename(cls._zip_url))
+        #download(cls._zip_url, zip_fn)
+        #extract(zip_fn, data_dir)
+        #os.remove(zip_fn)
+        #source_dir = os.path.join(data_dir, 'muse_3g_like_march_2025')
+        #installer.pip(source_dir, pkgname='muse3glike', no_deps=True,
+        #              force_reinstall=installer.reinstall)
+
         data_dir = installer.data_dir(cls.installer_section)
         os.makedirs(data_dir, exist_ok=True)
         zip_fn = os.path.join(data_dir, os.path.basename(cls._zip_url))
-        download(cls._zip_url, zip_fn)
-        extract(zip_fn, data_dir)
-        os.remove(zip_fn)
         source_dir = os.path.join(data_dir, 'muse_3g_like_march_2025')
+        if not os.path.isdir(source_dir):  # ya extraído en un intento previo: no volver a bajarlo
+            download(cls._zip_url, zip_fn)
+            extract(zip_fn, data_dir)
+            if os.path.exists(zip_fn):  # `extract` puede haberlo borrado ya
+                os.remove(zip_fn)
         installer.pip(source_dir, pkgname='muse3glike', no_deps=True,
                       force_reinstall=installer.reinstall)
