@@ -479,12 +479,12 @@ _PLA_BASELINE_URL = ('https://pla.esac.esa.int/pla/aio/product-action'
                      '?COSMOLOGY.FILE_ID=COM_Likelihood_Data-baseline_R3.00.tar.gz')
 # Paths inside the tarball for each likelihood (directory name = installer_section default key)
 _CLIK_TAR_PATHS = {
-    'plik_rd12_HM_v22_TT.clik':                          'baseline/plc_3.0/hi_l/plik/',
-    'plik_rd12_HM_v22b_TTTEEE.clik':                     'baseline/plc_3.0/hi_l/plik/',
-    'plik_lite_v22_TT.clik':                             'baseline/plc_3.0/hi_l/plik_lite_v22/',
-    'plik_lite_v22_TTTEEE.clik':                         'baseline/plc_3.0/hi_l/plik_lite_v22/',
-    'commander_dx12_v3_2_29.clik':                        'baseline/plc_3.0/lo_l/commander/',
-    'simall_100x143_offdiag_EE_Aplanck_B.clik':          'baseline/plc_3.0/lo_l/simall/',
+    'plik_rd12_HM_v22_TT.clik':                   'baseline/plc_3.0/hi_l/plik/',
+    'plik_rd12_HM_v22b_TTTEEE.clik':              'baseline/plc_3.0/hi_l/plik/',
+    'plik_lite_v22_TT.clik':                      'baseline/plc_3.0/hi_l/plik_lite/',
+    'plik_lite_v22_TTTEEE.clik':                  'baseline/plc_3.0/hi_l/plik_lite/',
+    'commander_dx12_v3_2_29.clik':                'baseline/plc_3.0/low_l/commander/',
+    'simall_100x143_offlike5_EE_Aplanck_B.clik':  'baseline/plc_3.0/low_l/simall/',
 }
 
 
